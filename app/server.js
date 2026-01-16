@@ -1,5 +1,7 @@
 const http = require('http');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 /* ====================================================
    1. VALIDATION
@@ -71,7 +73,7 @@ function submitToZatcaSandbox(payload) {
 }
 
 /* ====================================================
-   4A. ZATCA B2C QR GENERATOR (REAL)
+   4A. ZATCA B2C QR GENERATOR (REAL TLV)
 ==================================================== */
 function generateZatcaB2CQR({ sellerName, vatNumber, timestamp, total, vat }) {
   const tlv = [
@@ -100,6 +102,38 @@ function generateZatcaB2CQR({ sellerName, vatNumber, timestamp, total, vat }) {
 const server = http.createServer((req, res) => {
 
   /* -------------------------------
+     PILOT VIEWER (CLIENT DEMO)
+  -------------------------------- */
+  if (req.method === 'GET' && req.url === '/pilot') {
+    const html = fs.readFileSync(path.join(__dirname, 'pilot.html'), 'utf8');
+
+    // DEMO DATA (safe for pilot)
+    const invoiceData = {
+      invoiceNumber: 'INV-PILOT-001',
+      vatNumber: '300123456700003',
+      totalAmount: 115,
+      vatAmount: 17.25,
+      timestamp: new Date().toISOString(),
+      qrImageBase64: generateZatcaB2CQR({
+        sellerName: 'DEMO SELLER',
+        vatNumber: '300123456700003',
+        timestamp: new Date().toISOString(),
+        total: 115,
+        vat: 17.25
+      })
+    };
+
+    const finalHtml = html.replace(
+      'const data = window.INVOICE_DATA;',
+      `const data = ${JSON.stringify(invoiceData)};`
+    );
+
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(finalHtml);
+    return;
+  }
+
+  /* -------------------------------
      WEBHOOK (LOYVERSE)
   -------------------------------- */
   if (req.method === 'POST' && req.url.startsWith('/webhook')) {
@@ -114,7 +148,7 @@ const server = http.createServer((req, res) => {
   }
 
   /* -------------------------------
-     MANUAL INVOICE TEST ENDPOINT
+     MANUAL / BACKEND INVOICE
   -------------------------------- */
   if (req.method === 'POST' && req.url === '/invoice') {
     let body = '';
@@ -145,13 +179,6 @@ const server = http.createServer((req, res) => {
       const hash = sha256Hash(base64Xml);
       const signature = simulateSignature(hash);
 
-      const zatcaPayload = {
-        invoiceHash: hash,
-        uuid: crypto.randomUUID(),
-        invoice: base64Xml,
-        signature
-      };
-
       const sellerName = invoiceData.sellerName || 'DEMO SELLER';
       const vatNumber = invoiceData.vatNumber;
       const timestamp = new Date().toISOString();
@@ -166,12 +193,11 @@ const server = http.createServer((req, res) => {
         vat
       });
 
-      const zatcaResponse = submitToZatcaSandbox(zatcaPayload);
+      const zatcaResponse = submitToZatcaSandbox({});
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: 'SUBMITTED_TO_SANDBOX',
-        uuid: zatcaPayload.uuid,
         invoiceHash: hash,
         qrBase64,
         response: zatcaResponse

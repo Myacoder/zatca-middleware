@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+    <title>ZATCA Pilot Invoice</title>
+      <style>
+          body {
+                  font-family: Arial, sans-serif;
+                        background: #f5f5f5;
+                              padding: 20px;
+          }
+              .box {
+                      max-width: 420px;
+                            margin: auto;
+                                  background: white;
+                                        padding: 20px;
+                                              border: 1px solid #ddd;
+              }
+                  .banner {
+                          background: #ffeeba;
+                                padding: 10px;
+                                      text-align: center;
+                                            font-weight: bold;
+                                                  margin-bottom: 15px;
+                  }
+                      .row {
+                              margin-bottom: 8px;
+                      }
+                          .label {
+                                  font-weight: bold;
+                          }
+                              img {
+                                      display: block;
+                                            margin: 15px auto;
+                              }
+                                  button {
+                                          width: 100%;
+                                                padding: 10px;
+                                                      margin-top: 10px;
+                                                            font-size: 16px;
+                                  }
+                                    </style>
+                                    </head>
+                                    <body>
+
+                                    <div class="box">
+                                      <div class="banner">PILOT DEMO – NOT PRODUCTION</div>
+
+                                        <div class="row"><span class="label">Invoice:</span> <span id="inv"></span></div>
+                                          <div class="row"><span class="label">VAT Number:</span> <span id="vat"></span></div>
+                                            <div class="row"><span class="label">Total (SAR):</span> <span id="total"></span></div>
+                                              <div class="row"><span class="label">VAT Amount:</span> <span id="vatAmount"></span></div>
+                                                <div class="row"><span class="label">Time:</span> <span id="time"></span></div>
+
+                                                  <img id="qr" />
+
+                                                    <button onclick="window.print()">🖨️ Print</button>
+                                                      <button onclick="download()">⬇️ Download</button>
+                                                      </div>
+
+                                                      <script>
+                                                        // SAMPLE DATA (for pilot demo)
+                                                          const data = window.INVOICE_DATA;
+
+                                                            document.getElementById('inv').innerText = data.invoiceNumber;
+                                                              document.getElementById('vat').innerText = data.vatNumber;
+                                                                document.getElementById('total').innerText = data.totalAmount;
+                                                                  document.getElementById('vatAmount').innerText = data.vatAmount;
+                                                                    document.getElementById('time').innerText = data.timestamp;
+
+                                                                      document.getElementById('qr').src =
+                                                                          'data:image/png;base64,' + data.qrImageBase64;
+
+                                                                            function download() {
+                                                                                    const blob = new Blob([document.documentElement.outerHTML], { type: 'text/html' });
+                                                                                        const a = document.createElement('a');
+                                                                                            a.href = URL.createObjectURL(blob);
+                                                                                                a.download = 'zatca-pilot-invoice.html';
+                                                                                                    a.click();
+                                                                            }
+                                                                            </script>
+
+                                                                            </body>
+                                                                            </html>
+                                                                            }
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+          }
