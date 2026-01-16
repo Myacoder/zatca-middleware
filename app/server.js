@@ -92,20 +92,19 @@ const server = http.createServer((req, res) => {
      WEBHOOK (LOYVERSE)
   -------------------------------- */
 
-  if (req.method === 'POST' && req.url === '/webhook') {
-    let body = '';
+  if (req.method === 'POST' && req.url.startsWith('/webhook')) {
+  let body = '';
+  req.setEncoding('utf8');
 
-    req.on('data', chunk => body += chunk.toString());
-    req.on('end', () => {
-      console.log('Webhook received from Loyverse:', body);
+  req.on('data', chunk => body += chunk);
+  req.on('end', () => {
+    console.log('Webhook received:', body);
 
-      // For pilot: acknowledge only
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'RECEIVED' }));
-    });
-
-    return;
-  }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'RECEIVED' }));
+  });
+  return;
+}
 
   /* -------------------------------
      MANUAL INVOICE TEST ENDPOINT
