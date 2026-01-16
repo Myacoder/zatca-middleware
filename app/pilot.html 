@@ -1,92 +1,193 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-    <title>ZATCA Pilot Invoice</title>
-      <style>
-          body {
-                  font-family: Arial, sans-serif;
-                        background: #f5f5f5;
-                              padding: 20px;
-          }
-              .box {
-                      max-width: 420px;
-                            margin: auto;
-                                  background: white;
-                                        padding: 20px;
-                                              border: 1px solid #ddd;
-              }
-                  .banner {
-                          background: #ffeeba;
-                                padding: 10px;
-                                      text-align: center;
-                                            font-weight: bold;
-                                                  margin-bottom: 15px;
-                  }
-                      .row {
-                              margin-bottom: 8px;
-                      }
-                          .label {
-                                  font-weight: bold;
-                          }
-                              img {
-                                      display: block;
-                                            margin: 15px auto;
-                              }
-                                  button {
-                                          width: 100%;
-                                                padding: 10px;
-                                                      margin-top: 10px;
-                                                            font-size: 16px;
-                                  }
-                                    </style>
-                                    </head>
-                                    <body>
+const http = require('http');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
-                                    <div class="box">
-                                      <div class="banner">PILOT DEMO – NOT PRODUCTION</div>
+/* ====================================================
+   1. VALIDATION
+==================================================== */
+function validateInvoice(data) {
+  const errors = [];
+  if (!data.invoiceNumber) errors.push('invoiceNumber is required');
+  if (!data.vatNumber) errors.push('vatNumber is required');
+  if (!data.issueDate) errors.push('issueDate is required');
+  if (data.totalAmount === undefined) errors.push('totalAmount is required');
+  if (typeof data.totalAmount !== 'number')
+    errors.push('totalAmount must be a number');
+  return errors;
+}
 
-                                        <div class="row"><span class="label">Invoice:</span> <span id="inv"></span></div>
-                                          <div class="row"><span class="label">VAT Number:</span> <span id="vat"></span></div>
-                                            <div class="row"><span class="label">Total (SAR):</span> <span id="total"></span></div>
-                                              <div class="row"><span class="label">VAT Amount:</span> <span id="vatAmount"></span></div>
-                                                <div class="row"><span class="label">Time:</span> <span id="time"></span></div>
+/* ====================================================
+   2. ZATCA XML (SIMPLIFIED – PILOT)
+==================================================== */
+function jsonToZatcaXml(invoice, previousHash) {
+  return `
+<Invoice
+ xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+ xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+ xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>${invoice.invoiceNumber}</cbc:ID>
+  <cbc:IssueDate>${invoice.issueDate}</cbc:IssueDate>
+  <cac:AdditionalDocumentReference>
+    <cbc:ID>PreviousInvoiceHash</cbc:ID>
+    <cbc:UUID>${previousHash || 'FIRST_INVOICE'}</cbc:UUID>
+  </cac:AdditionalDocumentReference>
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cbc:CompanyID>${invoice.vatNumber}</cbc:CompanyID>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+  <cac:LegalMonetaryTotal>
+    <cbc:PayableAmount currencyID="SAR">${invoice.totalAmount}</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+</Invoice>
+`.trim();
+}
 
-                                                  <img id="qr" />
+/* ====================================================
+   3. HASH + SIGNATURE (MOCK)
+==================================================== */
+function base64Encode(text) {
+  return Buffer.from(text).toString('base64');
+}
 
-                                                    <button onclick="window.print()">🖨️ Print</button>
-                                                      <button onclick="download()">⬇️ Download</button>
-                                                      </div>
+function sha256Hash(text) {
+  return crypto.createHash('sha256').update(text).digest('hex');
+}
 
-                                                      <script>
-                                                        // SAMPLE DATA (for pilot demo)
-                                                          const data = window.INVOICE_DATA;
+function simulateSignature(hash) {
+  return crypto.createHash('sha256').update('SIGN-' + hash).digest('hex');
+}
 
-                                                            document.getElementById('inv').innerText = data.invoiceNumber;
-                                                              document.getElementById('vat').innerText = data.vatNumber;
-                                                                document.getElementById('total').innerText = data.totalAmount;
-                                                                  document.getElementById('vatAmount').innerText = data.vatAmount;
-                                                                    document.getElementById('time').innerText = data.timestamp;
+/* ====================================================
+   4. ZATCA B2C QR (REAL TLV)
+==================================================== */
+function generateZatcaB2CQR({ sellerName, vatNumber, timestamp, total, vat }) {
+  const tlv = [
+    Buffer.from([1, sellerName.length]), Buffer.from(sellerName),
+    Buffer.from([2, vatNumber.length]), Buffer.from(vatNumber),
+    Buffer.from([3, timestamp.length]), Buffer.from(timestamp),
+    Buffer.from([4, total.toString().length]), Buffer.from(total.toString()),
+    Buffer.from([5, vat.toString().length]), Buffer.from(vat.toString())
+  ];
+  return Buffer.concat(tlv).toString('base64');
+}
 
-                                                                      document.getElementById('qr').src =
-                                                                          'data:image/png;base64,' + data.qrImageBase64;
+/* ====================================================
+   5. MOCK ZATCA SANDBOX
+==================================================== */
+function submitToZatcaSandbox() {
+  return {
+    clearanceStatus: 'CLEARED',
+    reportingStatus: 'REPORTED',
+    uuid: crypto.randomUUID(),
+    timestamp: new Date().toISOString()
+  };
+}
 
-                                                                            function download() {
-                                                                                    const blob = new Blob([document.documentElement.outerHTML], { type: 'text/html' });
-                                                                                        const a = document.createElement('a');
-                                                                                            a.href = URL.createObjectURL(blob);
-                                                                                                a.download = 'zatca-pilot-invoice.html';
-                                                                                                    a.click();
-                                                                            }
-                                                                            </script>
+/* ====================================================
+   6. HTTP SERVER
+==================================================== */
+const server = http.createServer((req, res) => {
 
-                                                                            </body>
-                                                                            </html>
-                                                                            }
-                                  }
-                              }
-                          }
-                      }
-                  }
-              }
-          }
+  /* ===============================
+     PILOT VIEW PAGE
+  =============================== */
+  if (req.method === 'GET' && req.url === '/pilot') {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'pilot.html'),
+      'utf8'
+    );
+
+    // 🔴 Paste a REAL QR base64 you already generated
+    const invoiceData = {
+      invoiceNumber: 'INV-PILOT-001',
+      vatNumber: '300123456700003',
+      totalAmount: 115,
+      vatAmount: 17.25,
+      timestamp: new Date().toISOString(),
+      qrImageBase64: 'AQtERU1PIFNFTExFUgIPMzAwMTIzNDU2NzAwMDAzAxgyMDI2LTAxLTE2VDEwOjEyOjQ2LjExOVoEAzExNQUFMTcuMjU='
+    };
+
+    const finalHtml = html.replace(
+      'const data = window.INVOICE_DATA;',
+      `const data = ${JSON.stringify(invoiceData)};`
+    );
+
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(finalHtml);
+    return;
+  }
+
+  /* ===============================
+     LOYVERSE WEBHOOK
+  =============================== */
+  if (req.method === 'POST' && req.url.startsWith('/webhook')) {
+    let body = '';
+    req.on('data', chunk => body += chunk.toString());
+    req.on('end', () => {
+      console.log('Webhook received:', body);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'RECEIVED' }));
+    });
+    return;
+  }
+
+  /* ===============================
+     MANUAL /invoice TEST
+  =============================== */
+  if (req.method === 'POST' && req.url === '/invoice') {
+    let body = '';
+    req.on('data', chunk => body += chunk.toString());
+    req.on('end', () => {
+      let data;
+      try {
+        data = JSON.parse(body);
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ status: 'ERROR', errors: ['Invalid JSON'] }));
+      }
+
+      const errors = validateInvoice(data);
+      if (errors.length) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ status: 'ERROR', errors }));
+      }
+
+      const xml = jsonToZatcaXml(data);
+      const base64Xml = base64Encode(xml);
+      const hash = sha256Hash(base64Xml);
+
+      const total = data.totalAmount;
+      const vat = Number((total * 0.15).toFixed(2));
+
+      const qrBase64 = generateZatcaB2CQR({
+        sellerName: data.sellerName || 'DEMO SELLER',
+        vatNumber: data.vatNumber,
+        timestamp: new Date().toISOString(),
+        total,
+        vat
+      });
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'SUBMITTED_TO_SANDBOX',
+        invoiceHash: hash,
+        qrBase64,
+        response: submitToZatcaSandbox()
+      }));
+    });
+    return;
+  }
+
+  res.writeHead(404);
+  res.end();
+});
+
+/* ====================================================
+   7. START
+==================================================== */
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`ZATCA sandbox middleware running on port ${PORT}`);
+});
